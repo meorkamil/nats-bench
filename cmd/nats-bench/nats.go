@@ -137,21 +137,27 @@ func Subscribe() error {
 	select {}
 }
 
-func printProgress(current, total int, subject string) {
-	width := 30
-	filled := int(float64(current) / float64(total) * float64(width))
+func printProgress(received, total int, subject string) {
+	barWidth := 30
 
-	var bar, arrow, empty string
-
-	if filled == 0 {
-		empty = strings.Repeat("-", width)
-	} else {
-		bar = strings.Repeat("=", filled-1)
-		arrow = ">"
-		empty = strings.Repeat("-", width-filled)
+	var percent float64
+	var filled int
+	if total > 0 {
+		percent = float64(received) / float64(total) * 100
+		filled = int(float64(barWidth) * float64(received) / float64(total))
+		if filled > barWidth {
+			filled = barWidth
+		}
 	}
 
-	pct := float64(current) / float64(total) * 100
-	fmt.Printf("\r [%s%s%s] %.1f%% %d/%d subject=%s",
-		bar, arrow, empty, pct, current, total, subject)
+	remaining := barWidth - filled
+
+	fmt.Printf("\r [%s%s] %.1f%% %d/%d subject=%s",
+		strings.Repeat("=", filled),
+		strings.Repeat(" ", remaining),
+		percent,
+		received,
+		total,
+		subject,
+	)
 }

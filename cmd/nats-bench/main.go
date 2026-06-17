@@ -61,7 +61,7 @@ func main() {
 		}
 
 		fmt.Printf("\n")
-		slog.Info(fmt.Sprintf("Done. Published %d/%d messages (%d failed)", message, *natsMessageCount))
+		slog.Info(fmt.Sprintf("Done. Published %d/%d messages", message, *natsMessageCount))
 
 	} else if *appMode == "sub" {
 		slog.Info(fmt.Sprintf("Starting mode=%s. nats=%v, subject=%s, stream=%s", *appMode, *natsUrl, *natsSubject, *natsStream))
