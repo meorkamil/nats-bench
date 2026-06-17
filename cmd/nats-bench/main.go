@@ -10,7 +10,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 )
 
-const VERSION = "0.0.3"
+const VERSION = "0.0.4"
 
 var (
 	app               = kingpin.New("nats-bench", "NATs client publisher").DefaultEnvars()
@@ -24,6 +24,7 @@ var (
 	natsRetry         = app.Flag("retry", "Number of retry to NATS").Default("10").Int()
 	natsRetryWait     = app.Flag("retrywait", "Number of retry wait to NATS in second").Default("2").Int()
 	natsTimeout       = app.Flag("timeout", "NATS context timeout").Default("5").Int()
+	natsBatchSize     = app.Flag("batch", "Batch size").Default("100").Int()
 )
 
 func main() {
@@ -32,6 +33,8 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
+	slog.Info(fmt.Sprintf("Starting %s mode=%s. nats=%v, subject=%s, stream=%s", VERSION, *appMode, *natsUrl, *natsSubject, *natsStream))
+
 	// Connect to nats
 	if err := NewNats(); err != nil {
 		slog.Error(fmt.Sprintf("Failed to connect: %v", err))
@@ -39,22 +42,26 @@ func main() {
 	}
 
 	if *appMode == "pub" {
-		slog.Info(fmt.Sprintf("Starting mode=%s. nats=%v, subject=%s, stream=%s", *appMode, *natsUrl, *natsSubject, *natsStream))
-
 		users := generateUsers(*natsMessageCount, "dot")
 
-		var message int
-
+		payloads := make([][]byte, 0, len(users))
 		for _, u := range users {
-
 			data, _ := json.Marshal(u)
-			if err := Publish(*natsSubject, data); err != nil {
+			payloads = append(payloads, data)
+		}
+
+		var published int
+		for i := 0; i < len(payloads); i += *natsBatchSize {
+			end := min(i+*natsBatchSize, len(payloads))
+			batch := payloads[i:end]
+
+			if err := Publish(*natsSubject, batch); err != nil {
 				slog.Error(fmt.Sprintf("Reconnect attempt: %d. nats error: %v", *natsRetry, err))
 				os.Exit(1)
 			}
 
-			message++
-			printProgress(message, *natsMessageCount, *natsSubject)
+			published += len(batch)
+			printProgress(published, *natsMessageCount, *natsSubject)
 
 			if *natsPubSubSleep >= 0 {
 				time.Sleep(time.Duration(*natsPubSubSleep) * time.Millisecond)
@@ -62,11 +69,9 @@ func main() {
 		}
 
 		fmt.Printf("\n")
-		slog.Info(fmt.Sprintf("Done. Published %d/%d messages", message, *natsMessageCount))
+		slog.Info(fmt.Sprintf("Done. Published %d/%d messages", published, *natsMessageCount))
 
 	} else if *appMode == "sub" {
-		slog.Info(fmt.Sprintf("Starting mode=%s. nats=%v, subject=%s, stream=%s", *appMode, *natsUrl, *natsSubject, *natsStream))
-
 		if err := Subscribe(); err != nil {
 			slog.Error(fmt.Sprintf("%v", err))
 		}
