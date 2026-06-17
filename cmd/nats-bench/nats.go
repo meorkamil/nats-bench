@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/nats-io/nuid"
 )
 
 type User struct {
@@ -84,9 +86,10 @@ func NewNats() error {
 	slog.Info(fmt.Sprintf("Create stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
 
 	s, err := natsJStr.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     *natsStream,
-		Subjects: []string{*natsSubject},
-		Replicas: *natsStreamReplica,
+		Name:               *natsStream,
+		Subjects:           []string{*natsSubject},
+		Replicas:           *natsStreamReplica,
+		AllowAtomicPublish: true,
 	})
 
 	if err != nil {
@@ -98,16 +101,38 @@ func NewNats() error {
 	return nil
 }
 
-func Publish(subject string, data []byte) error {
+func Publish(subject string, messages [][]byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
 	defer cancel()
 
-	_, err := natsJStr.Publish(ctx, subject, data)
-	if err != nil {
-		return fmt.Errorf("%v", err)
-	}
+	batchId := nuid.Next()
+	total := len(messages)
 
-	//slog.Debug(fmt.Sprintf("Publish Dup: %v Seq: %v Steam: %v", jStrAck.Duplicate, jStrAck.Sequence, jStrAck.Stream))
+	for i, data := range messages {
+		msg := &nats.Msg{
+			Subject: *natsSubject,
+			Data:    data,
+			Header:  nats.Header{},
+		}
+
+		msg.Header.Set("Nats-Batch-Id", batchId)
+		msg.Header.Set("Nats-Batch-Sequence", strconv.Itoa(i+1))
+
+		isLast := i == total-1
+
+		if isLast {
+			msg.Header.Set("Nats-Batch-Commit", "1")
+			_, err := natsJStr.PublishMsg(ctx, msg)
+			if err != nil {
+				return fmt.Errorf("batch commit failed: %w", err)
+			}
+		} else {
+			err := natsConn.PublishMsg(msg)
+			if err != nil {
+				return fmt.Errorf("batch publish failed at %d: %w", i, err)
+			}
+		}
+	}
 
 	return nil
 }
