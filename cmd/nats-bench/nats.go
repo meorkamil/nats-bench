@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/signal"
-	"syscall"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -32,14 +30,31 @@ var natsJStr jetstream.JetStream
 var natsConn *nats.Conn
 
 func NewNats() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
 	defer cancel()
+
+	opts := []nats.Option{
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			fmt.Printf("\n")
+			slog.Info(fmt.Sprintf("Disconnected: %v. Retrying...", err))
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			fmt.Printf("\n")
+			slog.Info(fmt.Sprintf("Reconnected to: %v", nc.ConnectedUrl()))
+		}),
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			fmt.Printf("\n")
+			slog.Info("Connection closed, retries exhausted.")
+		}),
+		nats.MaxReconnects(*natsRetry),
+		nats.ReconnectWait(time.Duration(*natsRetryWait) * time.Second),
+	}
 
 	nc, err := nats.Connect(
 		*natsUrl,
-		nats.MaxReconnects(*natsRetry),
-		nats.ReconnectWait(time.Duration(*natsRetryWait)*time.Second),
+		opts...,
 	)
+
 	if err != nil {
 		return fmt.Errorf(fmt.Sprintf("%v", err))
 	}
@@ -84,7 +99,7 @@ func NewNats() error {
 }
 
 func Publish(subject string, data []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
 	defer cancel()
 
 	_, err := natsJStr.Publish(ctx, subject, data)
@@ -98,40 +113,45 @@ func Publish(subject string, data []byte) error {
 }
 
 func Subscribe() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
 	defer cancel()
 
 	c, err := natsStr.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable:   "CONS",
+		Durable:   fmt.Sprintf("%s-consumer", *natsStream),
 		AckPolicy: jetstream.AckExplicitPolicy,
 	})
-
 	if err != nil {
-		return fmt.Errorf("%v", err)
+		return fmt.Errorf("create consumer: %w", err)
 	}
 
-	// Iterate over messages continuously
-	go func(c jetstream.Consumer) {
+	var received int
 
-		it, _ := c.Messages()
+	consContext, _ := c.Consume(func(msg jetstream.Msg) {
+		received++
+		printProgress(received, *natsMessageCount, *natsSubject)
+		msg.Ack()
+	})
 
-		for {
-			msg, _ := it.Next()
-			msg.Ack()
-			slog.Info(fmt.Sprintf("Received a JetStream message: %v", string(msg.Data())))
-		}
+	defer consContext.Stop()
 
-	}(c)
+	select {}
+}
 
-	// Stop and drain NATs
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-	<-quit
-	slog.Info("Shutting down subscriber...")
+func printProgress(current, total int, subject string) {
+	width := 30
+	filled := int(float64(current) / float64(total) * float64(width))
 
-	slog.Info("Draining NATS...")
-	if err := natsConn.Drain(); err != nil {
-		slog.Error(fmt.Sprintf("NATs drain error: %s", err))
+	var bar, arrow, empty string
+
+	if filled == 0 {
+		empty = strings.Repeat("-", width)
+	} else {
+		bar = strings.Repeat("=", filled-1)
+		arrow = ">"
+		empty = strings.Repeat("-", width-filled)
 	}
-	return nil
+
+	pct := float64(current) / float64(total) * 100
+	fmt.Printf("\r [%s%s%s] %.1f%% %d/%d subject=%s",
+		bar, arrow, empty, pct, current, total, subject)
 }
