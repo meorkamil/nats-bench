@@ -38,15 +38,15 @@ func NewNats() error {
 	opts := []nats.Option{
 		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
 			fmt.Printf("\n")
-			slog.Info(fmt.Sprintf("Disconnected: %v. Retrying...", err))
+			slog.Info(fmt.Sprintf("NATS Disconnected: %v. Retrying...", err))
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")
-			slog.Info(fmt.Sprintf("Reconnected to: %v", nc.ConnectedUrl()))
+			slog.Info(fmt.Sprintf("NATS Reconnected to: %v", nc.ConnectedUrl()))
 		}),
 		nats.ClosedHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")
-			slog.Info("Connection closed, retries exhausted.")
+			slog.Info("NATS Connection closed, retries exhausted.")
 		}),
 		nats.MaxReconnects(*natsRetry),
 		nats.ReconnectWait(time.Duration(*natsRetryWait) * time.Second),
@@ -151,18 +151,21 @@ func Subscribe() error {
 
 	var received int
 
-	consContext, _ := c.Consume(func(msg jetstream.Msg) {
+	consContext, err := c.Consume(func(msg jetstream.Msg) {
 		received++
-		printProgress(received, *natsMessageCount, *natsSubject)
+		printProgress(received, *natsMessageCount, *natsSubject, 0, 0)
 		msg.Ack()
 	})
+	if err != nil {
+		return fmt.Errorf("consume: %w", err)
+	}
 
 	defer consContext.Stop()
 
 	select {}
 }
 
-func printProgress(received, total int, subject string) {
+func printProgress(received, total int, subject string, failed int, retries int) {
 	barWidth := 30
 
 	var percent float64
@@ -177,12 +180,25 @@ func printProgress(received, total int, subject string) {
 
 	remaining := barWidth - filled
 
-	fmt.Printf("\r [%s%s] %.1f%% %d/%d subject=%s",
-		strings.Repeat("=", filled),
-		strings.Repeat(" ", remaining),
-		percent,
-		received,
-		total,
-		subject,
-	)
+	if failed > 0 {
+		fmt.Printf("\r [%s%s] %.1f%% %d/%d subject=%s failed=%d retries=%d",
+			strings.Repeat("=", filled),
+			strings.Repeat(" ", remaining),
+			percent,
+			received,
+			total,
+			subject,
+			failed,
+			retries,
+		)
+	} else {
+		fmt.Printf("\r [%s%s] %.1f%% %d/%d subject=%s",
+			strings.Repeat("=", filled),
+			strings.Repeat(" ", remaining),
+			percent,
+			received,
+			total,
+			subject,
+		)
+	}
 }
