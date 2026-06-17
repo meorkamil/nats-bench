@@ -61,18 +61,16 @@ func main() {
 			if err := Publish(*natsSubject, batch); err != nil {
 				retriesCounter++
 
+				failed += len(batch)
+
 				fmt.Printf("\n")
 				slog.Error(fmt.Sprintf("%v", err))
 				slog.Info(fmt.Sprintf("Force reconnect attempt: %d/%d.", retriesCounter, *natsRetry))
 
 				if retriesCounter >= *natsRetry {
 					slog.Error(fmt.Sprintf("Max reconnect attempts reached: %d/%d. %v", retriesCounter, *natsRetry, err))
-					failed += len(batch) // batch permanently failed
-					i += *natsBatchSize  // move on to next batch
-					retriesCounter = 0   // reset for next batch
-
 					printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
-					continue
+					os.Exit(1)
 				}
 
 				if reconnErr := NewNats(); reconnErr != nil {
@@ -82,13 +80,14 @@ func main() {
 				time.Sleep(time.Duration(*natsRetryWait) * time.Second)
 
 				printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
-				continue // retry same batch
+				continue // retry the same batch
 			}
 
-			retriesCounter = 0
+			// Success — reset retry counter for next batch
+			//retriesCounter = 0
 
 			published += len(batch)
-			i += *natsBatchSize // advance only on success
+			i += *natsBatchSize
 			printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
 
 			if *natsPubSubSleep >= 0 {
