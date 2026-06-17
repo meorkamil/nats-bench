@@ -51,17 +51,35 @@ func main() {
 		}
 
 		var published int
+		var failed int
+		var retriesCounter int
+
 		for i := 0; i < len(payloads); i += *natsBatchSize {
 			end := min(i+*natsBatchSize, len(payloads))
 			batch := payloads[i:end]
 
 			if err := Publish(*natsSubject, batch); err != nil {
-				slog.Error(fmt.Sprintf("Reconnect attempt: %d. nats error: %v", *natsRetry, err))
-				os.Exit(1)
+				failed += len(batch)
+
+				if reconnErr := NewNats(); reconnErr != nil {
+					retriesCounter++
+					fmt.Printf("\n")
+					slog.Warn(fmt.Sprintf("Force reconnect attempt: %d/%d.", retriesCounter, *natsRetry))
+
+					if retriesCounter >= *natsRetry {
+						slog.Error(fmt.Sprintf("Reconnect attempt: %d/%d. %v", retriesCounter, *natsRetry, err))
+						os.Exit(1)
+					}
+
+					time.Sleep(time.Duration(*natsRetryWait) * time.Second)
+				}
+
+				printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
+				continue // skip incrementing published
 			}
 
 			published += len(batch)
-			printProgress(published, *natsMessageCount, *natsSubject)
+			printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
 
 			if *natsPubSubSleep >= 0 {
 				time.Sleep(time.Duration(*natsPubSubSleep) * time.Millisecond)
@@ -69,7 +87,7 @@ func main() {
 		}
 
 		fmt.Printf("\n")
-		slog.Info(fmt.Sprintf("Done. Published %d/%d messages", published, *natsMessageCount))
+		slog.Info(fmt.Sprintf("Done. Published %d/%d messages, Failed %d, Retries %d", published, *natsMessageCount, failed, retriesCounter))
 
 	} else if *appMode == "sub" {
 		if err := Subscribe(); err != nil {
