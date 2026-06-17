@@ -23,7 +23,7 @@ var (
 	natsPubSubSleep   = app.Flag("sleep", "Sleep time between interval in ms").Default("10").Int()
 	natsRetry         = app.Flag("retry", "Number of retry to NATS").Default("10").Int()
 	natsRetryWait     = app.Flag("retrywait", "Number of retry wait to NATS in second").Default("2").Int()
-	natsTimeout       = app.Flag("timeout", "Timeout set on NATS context").Default("5").Int()
+	natsTimeout       = app.Flag("timeout", "NATS context timeout").Default("5").Int()
 )
 
 func main() {
