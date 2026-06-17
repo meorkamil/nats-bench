@@ -10,7 +10,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 )
 
-const VERSION = "master"
+const VERSION = "0.0.3"
 
 var (
 	app               = kingpin.New("nats-bench", "NATs client publisher").DefaultEnvars()
@@ -27,6 +27,7 @@ var (
 )
 
 func main() {
+	app.Version(fmt.Sprintf("%s: %s", app.Name, VERSION))
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -61,7 +62,7 @@ func main() {
 		}
 
 		fmt.Printf("\n")
-		slog.Info(fmt.Sprintf("Done. Published %d/%d messages (%d failed)", message, *natsMessageCount))
+		slog.Info(fmt.Sprintf("Done. Published %d/%d messages", message, *natsMessageCount))
 
 	} else if *appMode == "sub" {
 		slog.Info(fmt.Sprintf("Starting mode=%s. nats=%v, subject=%s, stream=%s", *appMode, *natsUrl, *natsSubject, *natsStream))
