@@ -83,9 +83,9 @@ func NewNats() error {
 	natsJStr = js
 
 	// Create stream
-	slog.Info(fmt.Sprintf("Create stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
+	slog.Info(fmt.Sprintf("Create/Update stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
 
-	s, err := natsJStr.CreateStream(ctx, jetstream.StreamConfig{
+	s, err := natsJStr.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:               *natsStream,
 		Subjects:           []string{*natsSubject},
 		Replicas:           *natsStreamReplica,
