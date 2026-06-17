@@ -61,11 +61,12 @@ func main() {
 			if err := Publish(*natsSubject, batch); err != nil {
 				failed += len(batch)
 
+				fmt.Printf("\n")
+				slog.Error(fmt.Sprintf("%v", err))
+				slog.Info(fmt.Sprintf("Force reconnect attempt: %d/%d.", retriesCounter, *natsRetry))
+
 				if reconnErr := NewNats(); reconnErr != nil {
 					retriesCounter++
-					fmt.Printf("\n")
-					slog.Warn(fmt.Sprintf("Force reconnect attempt: %d/%d.", retriesCounter, *natsRetry))
-
 					if retriesCounter >= *natsRetry {
 						slog.Error(fmt.Sprintf("Reconnect attempt: %d/%d. %v", retriesCounter, *natsRetry, err))
 						os.Exit(1)
