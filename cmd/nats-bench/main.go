@@ -67,8 +67,12 @@ func main() {
 
 				if retriesCounter >= *natsRetry {
 					slog.Error(fmt.Sprintf("Max reconnect attempts reached: %d/%d. %v", retriesCounter, *natsRetry, err))
-					failed += len(batch)
-					os.Exit(1)
+					failed += len(batch) // batch permanently failed
+					i += *natsBatchSize  // move on to next batch
+					retriesCounter = 0   // reset for next batch
+
+					printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
+					continue
 				}
 
 				if reconnErr := NewNats(); reconnErr != nil {
