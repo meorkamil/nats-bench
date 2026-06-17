@@ -10,7 +10,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 )
 
-const VERSION = "master"
+const VERSION = "0.0.3"
 
 var (
 	app               = kingpin.New("nats-bench", "NATs client publisher").DefaultEnvars()
@@ -27,6 +27,7 @@ var (
 )
 
 func main() {
+	app.Version(fmt.Sprintf("%s: %s", app.Name, VERSION))
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
