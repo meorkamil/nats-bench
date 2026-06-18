@@ -43,7 +43,7 @@ func NewNats() error {
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")
-			fmt.Println(fmt.Sprintf("NATS Reconnected to: %v", nc.ConnectedUrl()))
+			fmt.Println(fmt.Sprintf("NATS Reconnected to: %v", nc.ConnectedServerName()))
 		}),
 		nats.ClosedHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")

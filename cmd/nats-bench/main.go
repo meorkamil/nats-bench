@@ -59,7 +59,7 @@ func main() {
 				retriesCounter++
 
 				fmt.Printf("\n")
-				fmt.Printf("%v", err)
+				fmt.Println(fmt.Sprintf("%v", err))
 				fmt.Println(fmt.Sprintf("Force reconnect attempt: %d/%d.", retriesCounter, *natsRetry))
 
 				if retriesCounter >= *natsRetry {
