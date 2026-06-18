@@ -21,7 +21,7 @@ Flags:
       --sleep=10              Sleep time between interval in ms ($NATS_BENCH_SLEEP)
       --retry=10              Number of retry to NATS ($NATS_BENCH_RETRY)
       --retrywait=2           Number of retry wait to NATS in second ($NATS_BENCH_RETRYWAIT)
-      --timeout=5             NATS context timeout ($NATS_BENCH_TIMEOUT)
+      --timeout=5             NATS timeout ($NATS_BENCH_TIMEOUT)
       --batch=100             Batch size ($NATS_BENCH_BATCH)
       --[no-]version          Show application version. ($NATS_BENCH_VERSION)
 ```
