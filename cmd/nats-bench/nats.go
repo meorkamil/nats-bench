@@ -50,6 +50,7 @@ func NewNats() error {
 			slog.Info("NATS Connection closed, retries exhausted.")
 		}),
 		nats.MaxReconnects(*natsRetry),
+		nats.Timeout(time.Duration(*natsTimeout) * time.Second),
 		nats.ReconnectWait(time.Duration(*natsRetryWait) * time.Second),
 	}
 
