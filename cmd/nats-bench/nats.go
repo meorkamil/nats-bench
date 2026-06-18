@@ -30,10 +30,11 @@ type Response struct {
 var natsStr jetstream.Stream
 var natsJStr jetstream.JetStream
 var natsConn *nats.Conn
+var natsCtx context.Context
 
 func NewNats() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
-	defer cancel()
+	ctx := context.Background()
+	natsCtx = ctx
 
 	opts := []nats.Option{
 		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
@@ -85,7 +86,7 @@ func NewNats() error {
 	// Create stream
 	slog.Info(fmt.Sprintf("Create/Update stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
 
-	s, err := natsJStr.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+	s, err := natsJStr.CreateOrUpdateStream(natsCtx, jetstream.StreamConfig{
 		Name:               *natsStream,
 		Subjects:           []string{*natsSubject},
 		Replicas:           *natsStreamReplica,
@@ -102,9 +103,6 @@ func NewNats() error {
 }
 
 func Publish(subject string, messages [][]byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
-	defer cancel()
-
 	batchId := nuid.Next()
 	total := len(messages)
 
@@ -122,7 +120,7 @@ func Publish(subject string, messages [][]byte) error {
 
 		if isLast {
 			msg.Header.Set("Nats-Batch-Commit", "1")
-			_, err := natsJStr.PublishMsg(ctx, msg)
+			_, err := natsJStr.PublishMsg(natsCtx, msg)
 			if err != nil {
 				return fmt.Errorf("batch commit failed: %w", err)
 			}
@@ -138,10 +136,7 @@ func Publish(subject string, messages [][]byte) error {
 }
 
 func Subscribe() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
-	defer cancel()
-
-	c, err := natsStr.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+	c, err := natsStr.CreateOrUpdateConsumer(natsCtx, jetstream.ConsumerConfig{
 		Durable:   fmt.Sprintf("%s-consumer", *natsStream),
 		AckPolicy: jetstream.AckExplicitPolicy,
 	})
