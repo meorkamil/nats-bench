@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -30,25 +30,27 @@ type Response struct {
 var natsStr jetstream.Stream
 var natsJStr jetstream.JetStream
 var natsConn *nats.Conn
+var natsCtx context.Context
 
 func NewNats() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
-	defer cancel()
+	ctx := context.Background()
+	natsCtx = ctx
 
 	opts := []nats.Option{
 		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
 			fmt.Printf("\n")
-			slog.Info(fmt.Sprintf("NATS Disconnected: %v. Retrying...", err))
+			fmt.Println(fmt.Sprintf("NATS Disconnected: %v. Retrying...", err))
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")
-			slog.Info(fmt.Sprintf("NATS Reconnected to: %v", nc.ConnectedUrl()))
+			fmt.Println(fmt.Sprintf("NATS Reconnected to: %v", nc.ConnectedUrl()))
 		}),
 		nats.ClosedHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")
-			slog.Info("NATS Connection closed, retries exhausted.")
+			fmt.Println("NATS Connection closed, retries exhausted.")
 		}),
 		nats.MaxReconnects(*natsRetry),
+		nats.Timeout(time.Duration(*natsTimeout) * time.Second),
 		nats.ReconnectWait(time.Duration(*natsRetryWait) * time.Second),
 	}
 
@@ -67,7 +69,7 @@ func NewNats() error {
 
 	natsConn = nc
 
-	slog.Info(fmt.Sprintf("Connected to NATs Addr: %s, ClusterName: %s, ServerName: %s, ServerVersion: %s",
+	fmt.Println(fmt.Sprintf("Connected to NATs Addr: %s, ClusterName: %s, ServerName: %s, ServerVersion: %s",
 		nc.ConnectedAddr(),
 		nc.ConnectedClusterName(),
 		nc.ConnectedServerName(),
@@ -83,9 +85,9 @@ func NewNats() error {
 	natsJStr = js
 
 	// Create stream
-	slog.Info(fmt.Sprintf("Create/Update stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
+	fmt.Println(fmt.Sprintf("Create/Update stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
 
-	s, err := natsJStr.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+	s, err := natsJStr.CreateOrUpdateStream(natsCtx, jetstream.StreamConfig{
 		Name:               *natsStream,
 		Subjects:           []string{*natsSubject},
 		Replicas:           *natsStreamReplica,
@@ -102,9 +104,6 @@ func NewNats() error {
 }
 
 func Publish(subject string, messages [][]byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
-	defer cancel()
-
 	batchId := nuid.Next()
 	total := len(messages)
 
@@ -122,7 +121,7 @@ func Publish(subject string, messages [][]byte) error {
 
 		if isLast {
 			msg.Header.Set("Nats-Batch-Commit", "1")
-			_, err := natsJStr.PublishMsg(ctx, msg)
+			_, err := natsJStr.PublishMsg(natsCtx, msg)
 			if err != nil {
 				return fmt.Errorf("batch commit failed: %w", err)
 			}
@@ -138,10 +137,7 @@ func Publish(subject string, messages [][]byte) error {
 }
 
 func Subscribe() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*natsTimeout)*time.Second)
-	defer cancel()
-
-	c, err := natsStr.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+	c, err := natsStr.CreateOrUpdateConsumer(natsCtx, jetstream.ConsumerConfig{
 		Durable:   fmt.Sprintf("%s-consumer", *natsStream),
 		AckPolicy: jetstream.AckExplicitPolicy,
 	})
@@ -201,4 +197,25 @@ func printProgress(received, total int, subject string, failed int, retries int)
 			subject,
 		)
 	}
+}
+
+func maskUrl(rawURL string) string {
+	urls := strings.Split(rawURL, ",")
+	masked := make([]string, 0, len(urls))
+
+	for _, u := range urls {
+		parsed, err := url.Parse(strings.TrimSpace(u))
+		if err != nil {
+			masked = append(masked, u)
+			continue
+		}
+		if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword {
+				parsed.User = url.UserPassword(parsed.User.Username(), "xxx")
+			}
+		}
+		masked = append(masked, parsed.String())
+	}
+
+	return strings.Join(masked, ",")
 }

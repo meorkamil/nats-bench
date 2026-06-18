@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"time"
 
@@ -23,7 +22,7 @@ var (
 	natsPubSubSleep   = app.Flag("sleep", "Sleep time between interval in ms").Default("10").Int()
 	natsRetry         = app.Flag("retry", "Number of retry to NATS").Default("10").Int()
 	natsRetryWait     = app.Flag("retrywait", "Number of retry wait to NATS in second").Default("2").Int()
-	natsTimeout       = app.Flag("timeout", "NATS context timeout").Default("5").Int()
+	natsTimeout       = app.Flag("timeout", "NATS timeout").Default("5").Int()
 	natsBatchSize     = app.Flag("batch", "Batch size").Default("100").Int()
 )
 
@@ -31,13 +30,11 @@ func main() {
 	app.Version(fmt.Sprintf("%s: %s", app.Name, VERSION))
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-
-	slog.Info(fmt.Sprintf("Starting %s mode=%s. nats=%v, subject=%s, stream=%s", VERSION, *appMode, *natsUrl, *natsSubject, *natsStream))
+	fmt.Println(fmt.Sprintf("Starting %s mode=%s. nats=%v, subject=%s, stream=%s", VERSION, *appMode, maskUrl(*natsUrl), *natsSubject, *natsStream))
 
 	// Connect to nats
 	if err := NewNats(); err != nil {
-		slog.Error(fmt.Sprintf("Failed to connect: %v", err))
+		fmt.Println(fmt.Sprintf("Failed to connect: %v", err))
 		os.Exit(1)
 	}
 
@@ -61,30 +58,33 @@ func main() {
 			if err := Publish(*natsSubject, batch); err != nil {
 				retriesCounter++
 
-				failed += len(batch)
-
 				fmt.Printf("\n")
-				slog.Error(fmt.Sprintf("%v", err))
-				slog.Info(fmt.Sprintf("Force reconnect attempt: %d/%d.", retriesCounter, *natsRetry))
+				fmt.Printf("%v", err)
+				fmt.Println(fmt.Sprintf("Force reconnect attempt: %d/%d.", retriesCounter, *natsRetry))
 
 				if retriesCounter >= *natsRetry {
-					slog.Error(fmt.Sprintf("Max reconnect attempts reached: %d/%d. %v", retriesCounter, *natsRetry, err))
+					// Give retry
+					failed += len(batch)
+					fmt.Println(fmt.Sprintf("Max reconnect attempts reached: %d/%d. %v", retriesCounter, *natsRetry, err))
 					printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
 					os.Exit(1)
 				}
 
-				if reconnErr := NewNats(); reconnErr != nil {
-					slog.Error(fmt.Sprintf("Reconnect failed: %v", reconnErr))
+				// Check if NATS is connected
+				if !natsConn.IsConnected() {
+					fmt.Println("NATS reconnect failed, proceeding to ForceReconnect")
+					if err := natsConn.ForceReconnect(); err != nil {
+						fmt.Println(fmt.Sprintf("ForceReconnect failed: %v", err))
+					}
 				}
 
 				time.Sleep(time.Duration(*natsRetryWait) * time.Second)
-
 				printProgress(published, *natsMessageCount, *natsSubject, failed, retriesCounter)
-				continue // retry the same batch
+				continue
 			}
 
 			// Success — reset retry counter for next batch
-			//retriesCounter = 0
+			retriesCounter = 0
 
 			published += len(batch)
 			i += *natsBatchSize
@@ -96,15 +96,15 @@ func main() {
 		}
 
 		fmt.Printf("\n")
-		slog.Info(fmt.Sprintf("Done. Published %d/%d messages, Failed %d, Retries %d", published, *natsMessageCount, failed, retriesCounter))
+		fmt.Println(fmt.Sprintf("Done. Published %d/%d messages, Failed %d, Retries %d", published, *natsMessageCount, failed, retriesCounter))
 
 	} else if *appMode == "sub" {
 		if err := Subscribe(); err != nil {
-			slog.Error(fmt.Sprintf("%v", err))
+			fmt.Println(fmt.Sprintf("%v", err))
 		}
 
 	} else {
-		slog.Error(fmt.Sprintf("Unable to start in mode: %s", *appMode))
+		fmt.Println(fmt.Sprintf("Unable to start in mode: %s", *appMode))
 		os.Exit(1)
 	}
 }
