@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -39,15 +39,15 @@ func NewNats() error {
 	opts := []nats.Option{
 		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
 			fmt.Printf("\n")
-			slog.Info(fmt.Sprintf("NATS Disconnected: %v. Retrying...", err))
+			fmt.Println(fmt.Sprintf("NATS Disconnected: %v. Retrying...", err))
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")
-			slog.Info(fmt.Sprintf("NATS Reconnected to: %v", nc.ConnectedUrl()))
+			fmt.Println(fmt.Sprintf("NATS Reconnected to: %v", nc.ConnectedUrl()))
 		}),
 		nats.ClosedHandler(func(nc *nats.Conn) {
 			fmt.Printf("\n")
-			slog.Info("NATS Connection closed, retries exhausted.")
+			fmt.Println("NATS Connection closed, retries exhausted.")
 		}),
 		nats.MaxReconnects(*natsRetry),
 		nats.Timeout(time.Duration(*natsTimeout) * time.Second),
@@ -69,7 +69,7 @@ func NewNats() error {
 
 	natsConn = nc
 
-	slog.Info(fmt.Sprintf("Connected to NATs Addr: %s, ClusterName: %s, ServerName: %s, ServerVersion: %s",
+	fmt.Println(fmt.Sprintf("Connected to NATs Addr: %s, ClusterName: %s, ServerName: %s, ServerVersion: %s",
 		nc.ConnectedAddr(),
 		nc.ConnectedClusterName(),
 		nc.ConnectedServerName(),
@@ -85,7 +85,7 @@ func NewNats() error {
 	natsJStr = js
 
 	// Create stream
-	slog.Info(fmt.Sprintf("Create/Update stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
+	fmt.Println(fmt.Sprintf("Create/Update stream. Name: %s, Subjects: %s", *natsStream, *natsSubject))
 
 	s, err := natsJStr.CreateOrUpdateStream(natsCtx, jetstream.StreamConfig{
 		Name:               *natsStream,
@@ -197,4 +197,25 @@ func printProgress(received, total int, subject string, failed int, retries int)
 			subject,
 		)
 	}
+}
+
+func maskUrl(rawURL string) string {
+	urls := strings.Split(rawURL, ",")
+	masked := make([]string, 0, len(urls))
+
+	for _, u := range urls {
+		parsed, err := url.Parse(strings.TrimSpace(u))
+		if err != nil {
+			masked = append(masked, u)
+			continue
+		}
+		if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword {
+				parsed.User = url.UserPassword(parsed.User.Username(), "xxx")
+			}
+		}
+		masked = append(masked, parsed.String())
+	}
+
+	return strings.Join(masked, ",")
 }
